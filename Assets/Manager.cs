@@ -13,7 +13,7 @@ public class Manager : MonoBehaviour
     public TMP_InputField targetResource;
     public TMP_InputField fristAsset;
 
-    public GameObject file;
+    public GameObject filePrefabs;
     public RawImage outputImage;
     public TextMeshProUGUI outputText;
 
@@ -52,12 +52,13 @@ public class Manager : MonoBehaviour
         
         foreach (var file in fileInfos)
         {
-            GameObject go = Instantiate(this.file, new Vector3(0, 0, 0), Quaternion.identity) as GameObject;
-            go.transform.SetParent(GameObject.Find("Canvas/BackGround/Mid/Left/BackGround").transform, false);
+            GameObject go = Instantiate(this.filePrefabs, new Vector3(0, 0, 0), Quaternion.identity) as GameObject;
+            go.transform.SetParent(GameObject.Find("Canvas/BackGround/Mid/Left/Scroll View/Viewport/Content").transform, false);
             go.transform.localScale = new Vector3(1,1,1);
 
             go.gameObject.transform.Find("File Name/Text").GetComponent<TextMeshProUGUI>().text = file.Name;
-            go.gameObject.transform.Find("Path/Text").GetComponent<TextMeshProUGUI>().text = file.FullName;           
+            go.gameObject.transform.Find("Path/Text").GetComponent<TextMeshProUGUI>().text = file.FullName;  
+                     
         }
     }
 
@@ -66,8 +67,6 @@ public class Manager : MonoBehaviour
         var bytes = File.ReadAllBytes(path);
         var texture = new Texture2D(1,1);
         texture.LoadImage(bytes, false);
-
-        Debug.Log("ASDFWF");
 
         OutputImage(texture);
     }
@@ -95,5 +94,65 @@ public class Manager : MonoBehaviour
 
         outputImage.texture = texture2D;
     }
+
+    public void EncryptFile()
+    {
+        foreach (var file in fileInfos)
+        {
+            var assetsBytes = File.ReadAllBytes(file.FullName);
+
+            byte [] encryptBytes = null;
+
+            switch (CheckTypeFile(file))
+            {
+                case typeFile.Image:
+                    encryptBytes = Encrypt(assetsBytes);
+                    break;
+
+                case typeFile.Txt:
+                    encryptBytes = Encrypt(assetsBytes, assetsBytes.Length);
+                    break;
+                
+                default: break;
+            }
+
+            string encryptFilePath = targetResource.text + @"\" + file.Name;
+            Debug.Log(encryptFilePath);
+
+            if(encryptBytes != null) WriteByte(encryptBytes, encryptFilePath);
+        }
+    }
+
+    private void WriteByte(byte[] bytes, string dest)
+    {
+        var desTemp = dest;
+        var ext = Path.GetExtension(desTemp);
+        if (!string.IsNullOrEmpty(ext))
+        {
+            desTemp = desTemp.Replace(ext, ".unity3d");
+        }
+
+        File.WriteAllBytes(desTemp, bytes);
+    }
+
+    private byte[] Encrypt(byte[] data, int encryptTotal = 1)
+    {
+        for (var i = 0; i < encryptTotal; i++) 
+        {
+            data[i] = (byte)~data[i];
+        }
+        return data;
+    }
     
+    private typeFile CheckTypeFile(FileInfo file)
+    {
+        if(file.Name.Contains(".txt")) return typeFile.Txt;
+        else return typeFile.Image;
+    }
+
+    enum typeFile
+    {
+        Txt,
+        Image
+    }
 }

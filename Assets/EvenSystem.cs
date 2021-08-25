@@ -23,7 +23,6 @@ public class EvenSystem : MonoBehaviour, IPointerEnterHandler, IPointerClickHand
     {
         if(nameFile.Contains(".png")) manager.GetTexture(path);
         else if(nameFile.Contains(".txt")) manager.GetText(path);
-        Debug.Log(name + " Game Object Clicked!");
     }
 
     public void OnPointerEnter(PointerEventData pointerEventData)
