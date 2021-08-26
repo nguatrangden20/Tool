@@ -6,6 +6,9 @@ using SFB;
 using System.IO;
 using System.Linq;
 using UnityEngine.UI;
+using MiniJSON;
+using Libs;
+using System.IO.Compression;
 
 public class Manager : MonoBehaviour
 {
@@ -15,7 +18,10 @@ public class Manager : MonoBehaviour
 
     public GameObject filePrefabs;
     public RawImage outputImage;
-    public TextMeshProUGUI outputText;
+    public GameObject outputText;
+
+    public TextMeshProUGUI fileSize;
+    public TextMeshProUGUI pixel;
 
 
     public void ShowExplorer(string path)
@@ -45,10 +51,27 @@ public class Manager : MonoBehaviour
     }
 
     FileInfo[] fileInfos;
+    public Toggle all;
+    public Toggle change;
     public void Refresh()
     {
         var info = new DirectoryInfo(formResource.text);
-        fileInfos = info.GetFiles();        
+        var metaFile = new DirectoryInfo(formResource.text + @"\" + "meta-folder").GetFiles();
+        var listNameMetaFile = new List<string>();
+        foreach (var item in metaFile)
+        {
+            listNameMetaFile.Add(item.Name);
+        }
+        if(change.isOn)
+            fileInfos = info.GetFiles().Where(file => !listNameMetaFile.Contains(file.Name)).ToArray();
+        else fileInfos = info.GetFiles();
+
+        var parentObject = GameObject.Find("Canvas/BackGround/Mid/Left/Scroll View/Viewport/Content");
+        if(parentObject.transform.childCount != 0)
+            for (int i = 0; i < parentObject.transform.childCount; i++)
+            {
+                GameObject.Destroy(parentObject.transform.GetChild(i).gameObject);
+            }
         
         foreach (var file in fileInfos)
         {
@@ -69,6 +92,14 @@ public class Manager : MonoBehaviour
         texture.LoadImage(bytes, false);
 
         OutputImage(texture);
+
+        FileInfo file = new FileInfo(path);
+
+        pixel.text = "Pixel: " + texture.width + "x" + texture.height;
+        fileSize.text = "File Size: " + file.Length + " Bytes";
+
+        pixel.gameObject.SetActive(true);
+        fileSize.gameObject.SetActive(true);
     }
 
     public void GetText(string path)
@@ -76,6 +107,13 @@ public class Manager : MonoBehaviour
         var text = File.ReadAllText(path);
         
         OutputText(text);
+
+        FileInfo file = new FileInfo(path);
+
+        fileSize.text = "File Size: " + file.Length + " Bytes";
+
+        fileSize.gameObject.SetActive(true);
+        pixel.gameObject.SetActive(false);
     }
 
 
@@ -84,7 +122,7 @@ public class Manager : MonoBehaviour
         outputImage.gameObject.SetActive(false);
         outputText.gameObject.SetActive(true);
         
-        outputText.text = text;
+        outputText.transform.Find("Viewport/Content/Text").GetComponent<TextMeshProUGUI>().text = text;
     }
 
     private void OutputImage(Texture2D texture2D)
@@ -97,6 +135,9 @@ public class Manager : MonoBehaviour
 
     public void EncryptFile()
     {
+        string pathMetaFolder = formResource.text + @"\" + "meta-folder";
+        Directory.CreateDirectory(pathMetaFolder);        
+
         foreach (var file in fileInfos)
         {
             var assetsBytes = File.ReadAllBytes(file.FullName);
@@ -105,11 +146,11 @@ public class Manager : MonoBehaviour
 
             switch (CheckTypeFile(file))
             {
-                case typeFile.Image:
+                case FileKind.Image:
                     encryptBytes = Encrypt(assetsBytes);
                     break;
 
-                case typeFile.Txt:
+                case FileKind.Text:
                     encryptBytes = Encrypt(assetsBytes, assetsBytes.Length);
                     break;
                 
@@ -117,10 +158,51 @@ public class Manager : MonoBehaviour
             }
 
             string encryptFilePath = targetResource.text + @"\" + file.Name;
-            Debug.Log(encryptFilePath);
 
             if(encryptBytes != null) WriteByte(encryptBytes, encryptFilePath);
+
+            var metaFile = new GMetaFile()
+            {
+                Id = file.Name,
+                Path = file.FullName,
+                FileName = file.Name,
+                FileSize = file.Length,
+                Kind = CheckTypeFile(file),
+                Date = file.LastWriteTime.ToString("dd/MM/yyyy HH:mm:ss")
+            };
+
+            string pathMetaFile = pathMetaFolder + @"\" + file.Name;
+            WriteTextFile(metaFile, pathMetaFile);
         }
+
+        DirectoryInfo zipfolder = new DirectoryInfo(targetResource.text);
+        string nameZipFolder = formResource.text + @"\" + zipfolder.Name + ".zip";
+        ZipFile.CreateFromDirectory(zipfolder.FullName, nameZipFolder);
+
+        string nameZipFolder2 = zipfolder.FullName +@"\" + zipfolder.Name + ".zip";
+        if(File.Exists(nameZipFolder2)) File.Delete(nameZipFolder2);
+        File.Move(nameZipFolder, nameZipFolder2);
+
+        string fileZipMetaName = zipfolder.Name;
+        var listDataZip = new List<object>();
+        long totalSize = 0;
+        Dictionary<string, object> metadatazip = new Dictionary<string, object>();
+        string nameMetaFile = (targetResource.text + @"\" + zipfolder.Name + "Metadata.txt").Replace("\\", "/");
+        WriteZipMetadata(targetResource.text + @"\", fileZipMetaName, listDataZip, fileInfos.Length, totalSize, metadatazip, nameMetaFile, fristAsset.text);
+    } 
+
+    public static void WriteTextFile(GMetaFile metaFile, string des)
+    {
+        var desTemp = des;
+        var ext = Path.GetExtension(desTemp);
+
+        if (!string.IsNullOrEmpty(ext))
+        {
+            desTemp = desTemp.Replace(ext, ext.ToLower());
+        }
+
+        var json = MiniJson.Serialize(metaFile.ToDic());      
+        File.WriteAllText(desTemp, json);
     }
 
     private void WriteByte(byte[] bytes, string dest)
@@ -144,15 +226,70 @@ public class Manager : MonoBehaviour
         return data;
     }
     
-    private typeFile CheckTypeFile(FileInfo file)
+    private FileKind CheckTypeFile(FileInfo file)
     {
-        if(file.Name.Contains(".txt")) return typeFile.Txt;
-        else return typeFile.Image;
+        if(file.Name.Contains(".txt")) return FileKind.Text;
+        else if(file.Name.Contains(".png")) return FileKind.Image;
+            else return FileKind.None;
     }
 
-    enum typeFile
+    public static void WriteZipMetadata(string prePathFileZip, string fileZipName, List<object> listDataZip, int childCount,
+            long totalSize, Dictionary<string, object> metadatazip, string nameMetaFile, string desFirstAsset)
     {
-        Txt,
-        Image
+        FileInfo fileInfo;
+        fileInfo = new FileInfo(prePathFileZip + fileZipName + ".zip");
+        if (fileInfo != null)
+        {
+            listDataZip.Add(AddZipData(fileInfo.Name, fileInfo.Length, childCount));
+
+            totalSize += fileInfo.Length;
+        }
+
+        metadatazip.Add("data", listDataZip);
+
+        metadatazip.Add("total_size", totalSize);
+
+        string metadataJson = MiniJson.Serialize(metadatazip);
+
+        File.WriteAllText(nameMetaFile, metadataJson);
+
+        //merge first asset
+
+        DirectoryInfo folderFirstAsset = new DirectoryInfo(desFirstAsset);
+
+        FileInfo[] fileInfos = folderFirstAsset.GetFiles();
+
+        for (int i = 0; i < fileInfos.Length; ++i)
+        {
+            var dataTarget = File.ReadAllText(fileInfos[i].FullName.Replace("\\", "/"));
+
+            var dicTarget = (Dictionary<string, object>)MiniJson.Deserialize(dataTarget);
+
+            dicTarget["asset2d"] = listDataZip;
+
+            dicTarget["asset2d_size"] = totalSize;
+
+            if (!dicTarget.ContainsKey("assetbundle_size"))
+                    dicTarget["assetbundle_size"] = 0;
+
+            dicTarget["total_size"] = long.Parse(dicTarget["assetbundle_size"].ToString()) + totalSize;
+                
+            string content = MiniJson.Serialize(dicTarget);
+
+            File.WriteAllText(fileInfos[i].FullName.Replace("\\", "/"), content);
+        }
+    }
+
+    public static Dictionary<string, object> AddZipData(string name, long size, int childCount)
+    {
+        Dictionary<string, object> data = new Dictionary<string, object>();
+
+        data.Add("assetbundle_name", name);
+
+        data.Add("size", size);
+
+        data.Add("child_count", childCount);
+
+        return data;
     }
 }
