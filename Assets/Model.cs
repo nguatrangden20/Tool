@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using UnityEngine;
+using UnityEngine.UI;
 
 namespace Libs
 {
@@ -22,6 +24,24 @@ namespace Libs
             PreloadType = GRPreloadType.Queue;
             CacheType = GRCacheType.Disk;
         }
+    }
+
+    [Serializable]
+    public class GFileView : GFile
+    {
+        public FileStatus StatusId;
+        public Texture2D StatusImage { get; set; }
+        public string ParentFolder { get; set; }
+    }
+
+    public class GImageFile : GFileView
+    {
+        public int Width;
+        public int Heigh;
+    }
+
+    public class GTextFile : GFileView
+    {
     }
 
     public class GMetaFile : GFile
@@ -145,4 +165,5 @@ namespace Libs
         RamPersistent,  // keep in ram forever once being loaded, never destroy
         None,           // always reload when being request, do not cache - useful for checking version / update
     }
+
 }

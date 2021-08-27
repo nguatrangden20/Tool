@@ -9,7 +9,7 @@ public class EvenSystem : MonoBehaviour, IPointerEnterHandler, IPointerClickHand
 {
 
     private string path;
-    private string nameFile;
+    public string nameFile;
     private Manager manager;
     
     private void Start() 
@@ -21,8 +21,8 @@ public class EvenSystem : MonoBehaviour, IPointerEnterHandler, IPointerClickHand
 
     public void OnPointerClick(PointerEventData pointerEventData)
     {
-        if(nameFile.Contains(".png")) manager.GetTexture(path);
-        else if(nameFile.Contains(".txt")) manager.GetText(path);
+        if(nameFile.Contains(".png")) manager.GetTexture(path, nameFile);
+        else if(nameFile.Contains(".txt")) manager.GetText(path, nameFile);
     }
 
     public void OnPointerEnter(PointerEventData pointerEventData)

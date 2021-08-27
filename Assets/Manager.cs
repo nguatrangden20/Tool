@@ -23,6 +23,9 @@ public class Manager : MonoBehaviour
     public TextMeshProUGUI fileSize;
     public TextMeshProUGUI pixel;
 
+    Dictionary<string, GRPreloadType> preloadType = new Dictionary<string, GRPreloadType>();
+    Dictionary<string, GRCacheType> cacheType = new Dictionary<string, GRCacheType>();
+
 
     public void ShowExplorer(string path)
     {        
@@ -55,6 +58,8 @@ public class Manager : MonoBehaviour
     public Toggle change;
     public void Refresh()
     {
+        string pathMetaFolder = formResource.text + @"\" + "meta-folder";
+        Directory.CreateDirectory(pathMetaFolder);
         var info = new DirectoryInfo(formResource.text);
         var metaFile = new DirectoryInfo(formResource.text + @"\" + "meta-folder").GetFiles();
         var listNameMetaFile = new List<string>();
@@ -81,11 +86,56 @@ public class Manager : MonoBehaviour
 
             go.gameObject.transform.Find("File Name/Text").GetComponent<TextMeshProUGUI>().text = file.Name;
             go.gameObject.transform.Find("Path/Text").GetComponent<TextMeshProUGUI>().text = file.FullName;  
-                     
+
+            if(!preloadType.ContainsKey(file.Name)) preloadType.Add(file.Name, GRPreloadType.Queue);
+            if(!cacheType.ContainsKey(file.Name)) cacheType.Add(file.Name, GRCacheType.Disk);
         }
     }
 
-    public void GetTexture(string path)
+    public Toggle Queue;
+    public Toggle Disk;
+    public GameObject optional;
+    private void SetOptional(bool onOff, string nameFile)
+    {
+        switch (preloadType[nameFile])
+        {
+            case GRPreloadType.OnDemand:
+                optional.transform.Find("Preload/OnDemand").GetComponent<Toggle>().isOn = true;
+                break;
+
+            case GRPreloadType.Preload:
+                optional.transform.Find("Preload/Preload").GetComponent<Toggle>().isOn = true;
+                break;
+
+            case GRPreloadType.Queue:
+                optional.transform.Find("Preload/Queue").GetComponent<Toggle>().isOn = true;
+                break;
+
+            default: break;
+        }
+
+        switch (cacheType[nameFile])
+        {
+            case GRCacheType.Disk:
+                optional.transform.Find("Cache/Disk").GetComponent<Toggle>().isOn = true;
+                break;
+
+            case GRCacheType.RamPersistent:
+                optional.transform.Find("Cache/RamPersistent").GetComponent<Toggle>().isOn = true;
+                break;
+
+            case GRCacheType.None:
+                optional.transform.Find("Cache/None").GetComponent<Toggle>().isOn = true;
+                break;
+
+            default: break;
+        }
+
+        optional.SetActive(onOff);
+        staticNameFile = nameFile;
+    }
+
+    public void GetTexture(string path, string nameFile)
     {
         var bytes = File.ReadAllBytes(path);
         var texture = new Texture2D(1,1);
@@ -100,9 +150,11 @@ public class Manager : MonoBehaviour
 
         pixel.gameObject.SetActive(true);
         fileSize.gameObject.SetActive(true);
+
+        SetOptional(true, nameFile);
     }
 
-    public void GetText(string path)
+    public void GetText(string path, string nameFile)
     {
         var text = File.ReadAllText(path);
         
@@ -114,6 +166,8 @@ public class Manager : MonoBehaviour
 
         fileSize.gameObject.SetActive(true);
         pixel.gameObject.SetActive(false);
+
+        SetOptional(true, nameFile);
     }
 
 
@@ -133,8 +187,10 @@ public class Manager : MonoBehaviour
         outputImage.texture = texture2D;
     }
 
+    List<GFileView> listFile = new List<GFileView>();
     public void EncryptFile()
     {
+
         string pathMetaFolder = formResource.text + @"\" + "meta-folder";
         Directory.CreateDirectory(pathMetaFolder);        
 
@@ -173,10 +229,46 @@ public class Manager : MonoBehaviour
 
             string pathMetaFile = pathMetaFolder + @"\" + file.Name;
             WriteTextFile(metaFile, pathMetaFile);
+
+            var bytes = File.ReadAllBytes(file.FullName);
+            var texture = new Texture2D(1,1);
+            texture.LoadImage(bytes, false);
+
+            switch (CheckTypeFile(file))
+            {
+                case FileKind.Image:
+                listFile.Add(new GImageFile()
+                {
+                    Path = file.FullName,
+                    FileSize = file.Length,
+                    Heigh = texture.height,
+                    Width = texture.width,
+                    PreloadType = preloadType[file.Name],
+                    CacheType = cacheType[file.Name],
+                    Date = file.LastWriteTime.ToString("ddMMyyyyHHmmss")
+                });
+                break;
+
+                case FileKind.Text:
+                listFile.Add(new GTextFile()
+                {
+                    Path = file.FullName,
+                    FileSize = file.Length,
+                    PreloadType = preloadType[file.Name],
+                    CacheType = cacheType[file.Name],
+                    Date = file.LastWriteTime.ToString("ddMMyyyyHHmmss")
+                });
+                break;
+
+                default: break;
+            }
+
         }
 
         DirectoryInfo zipfolder = new DirectoryInfo(targetResource.text);
         string nameZipFolder = formResource.text + @"\" + zipfolder.Name + ".zip";
+        string nameFinishZip = targetResource.text + @"\" + zipfolder.Name + ".zip";
+        if(File.Exists(nameFinishZip)) File.Delete(nameFinishZip);
         ZipFile.CreateFromDirectory(zipfolder.FullName, nameZipFolder);
 
         string nameZipFolder2 = zipfolder.FullName +@"\" + zipfolder.Name + ".zip";
@@ -189,6 +281,8 @@ public class Manager : MonoBehaviour
         Dictionary<string, object> metadatazip = new Dictionary<string, object>();
         string nameMetaFile = (targetResource.text + @"\" + zipfolder.Name + "Metadata.txt").Replace("\\", "/");
         WriteZipMetadata(targetResource.text + @"\", fileZipMetaName, listDataZip, fileInfos.Length, totalSize, metadatazip, nameMetaFile, fristAsset.text);
+
+        WriteCSV(listFile, formResource.text + @"\", targetResource.text + @"\", targetResource.text + @"\", fileZipMetaName);
     } 
 
     public static void WriteTextFile(GMetaFile metaFile, string des)
@@ -292,4 +386,105 @@ public class Manager : MonoBehaviour
 
         return data;
     }
+
+    public void WriteCSV(List<GFileView> fileViews, string desFrom, string desTarget,
+    string prePathFileZip, string fileZipName)
+    {
+        var listLine = "v2\n";
+        foreach (var fileView in fileViews)
+        {
+            var ext = Path.GetExtension(fileView.Path);
+            Debug.Log(ext);            
+            Debug.Log(fileView.Path);            
+            var fileId = fileView.Path.Replace(desFrom, "").Replace(ext, "");
+            if (fileView is GImageFile)
+            {
+                var fv = (GImageFile) fileView;
+                var asset = new AssetClass()
+                {
+                    id          = fileId,
+                    fileSize    = fv.FileSize,
+                    height      = fv.Heigh,
+                    width       = fv.Width,
+                    PreloadType = fv.PreloadType,
+                    CacheType   = fv.CacheType,
+                    sign        = fv.Date + "79",
+                    type        = ext.Replace(".", "").ToLower()
+                };
+
+                listLine += asset.ToImageCSV() + "\n";
+            }
+            else if (fileView is GTextFile)
+            {
+                var fv = (GTextFile)fileView;
+                var asset = new AssetClass()
+                {
+                    id          = fileId,
+                    fileSize    = fv.FileSize,
+                    PreloadType = fv.PreloadType,
+                    CacheType   = fv.CacheType,
+                    sign = fv.Date + "79",
+                    type        = ext.Replace(".", "").ToLower()
+                };
+
+                listLine += (asset.ToTextCSV()) + "\n";
+            }
+        }
+
+        var data = System.Text.Encoding.ASCII.GetBytes(listLine);
+        var dataEncrypt = Encrypt(data, data.Length);
+        WriteByte(dataEncrypt, desTarget + "\\map.unity3d");
+        Debug.Log((desTarget + "\\map.unity3d").Replace("\\", "/"));
+
+        using (FileStream zipToOpen = new FileStream(prePathFileZip + fileZipName + ".zip", FileMode.Open))
+        {
+            using (ZipArchive archive = new ZipArchive(zipToOpen, ZipArchiveMode.Update))
+            {
+                archive.CreateEntryFromFile((desTarget + "\\map.unity3d").Replace("\\", "/"), "map.unity3d");
+            }
+        }
+    }
+
+
+    public static string staticNameFile = "FristBlood";
+    public void TickPreload(string Type)
+    {
+        switch (Type)
+        {
+            case "Ondemand":
+                preloadType[staticNameFile] = GRPreloadType.OnDemand;
+                break;
+
+            case "Queue":
+                preloadType[staticNameFile] = GRPreloadType.Queue;
+                break;
+
+            case "Preload":
+                preloadType[staticNameFile] = GRPreloadType.Preload;
+                break;
+
+            default: break;
+        }
+    }
+
+    public void TickCache(string Type)
+    {
+        switch (Type)
+        {
+            case "Disk":
+                cacheType[staticNameFile] = GRCacheType.Disk;
+                break;
+
+            case "RamPersistent":
+                cacheType[staticNameFile] = GRCacheType.RamPersistent;
+                break;
+
+            case "None":
+                cacheType[staticNameFile] = GRCacheType.None;
+                break;
+
+            default: break;
+        }
+    }
+
 }
