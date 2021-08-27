@@ -10,6 +10,7 @@ using MiniJSON;
 using Libs;
 using System.IO.Compression;
 
+
 public class Manager : MonoBehaviour
 {
     public TMP_InputField formResource;
@@ -485,6 +486,11 @@ public class Manager : MonoBehaviour
 
             default: break;
         }
+    }
+
+    public void Quit()
+    {
+        Application.Quit();
     }
 
 }
