@@ -9,6 +9,7 @@ using UnityEngine.UI;
 using MiniJSON;
 using Libs;
 using System.IO.Compression;
+using System.Threading;
 
 
 public class Manager : MonoBehaviour
@@ -26,7 +27,10 @@ public class Manager : MonoBehaviour
 
     Dictionary<string, GRPreloadType> preloadType = new Dictionary<string, GRPreloadType>();
     Dictionary<string, GRCacheType> cacheType = new Dictionary<string, GRCacheType>();
+    List<GFileView> listFile = new List<GFileView>();
 
+    public Slider progressBar;
+    private bool checkEncryptClick;
 
     public void ShowExplorer(string path)
     {        
@@ -59,6 +63,8 @@ public class Manager : MonoBehaviour
     public Toggle change;
     public void Refresh()
     {
+        checkEncryptClick = true;
+
         string pathMetaFolder = formResource.text + @"\" + "meta-folder";
         Directory.CreateDirectory(pathMetaFolder);
         var info = new DirectoryInfo(formResource.text);
@@ -90,6 +96,8 @@ public class Manager : MonoBehaviour
 
             if(!preloadType.ContainsKey(file.Name)) preloadType.Add(file.Name, GRPreloadType.Queue);
             if(!cacheType.ContainsKey(file.Name)) cacheType.Add(file.Name, GRCacheType.Disk);
+
+            AddListFile(file);
         }
     }
 
@@ -188,9 +196,17 @@ public class Manager : MonoBehaviour
         outputImage.texture = texture2D;
     }
 
-    List<GFileView> listFile = new List<GFileView>();
-    public void EncryptFile()
+    public void EncryptButton()
     {
+        Thread encrypt = new Thread(new ThreadStart(this.EncryptFile));
+        if(checkEncryptClick) encrypt.Start();
+    }
+
+    float progressValue;
+    private void EncryptFile()
+    {
+        checkEncryptClick = false;
+        int count = 0;
 
         string pathMetaFolder = formResource.text + @"\" + "meta-folder";
         Directory.CreateDirectory(pathMetaFolder);        
@@ -231,39 +247,9 @@ public class Manager : MonoBehaviour
             string pathMetaFile = pathMetaFolder + @"\" + file.Name;
             WriteTextFile(metaFile, pathMetaFile);
 
-            var bytes = File.ReadAllBytes(file.FullName);
-            var texture = new Texture2D(1,1);
-            texture.LoadImage(bytes, false);
-
-            switch (CheckTypeFile(file))
-            {
-                case FileKind.Image:
-                listFile.Add(new GImageFile()
-                {
-                    Path = file.FullName,
-                    FileSize = file.Length,
-                    Heigh = texture.height,
-                    Width = texture.width,
-                    PreloadType = preloadType[file.Name],
-                    CacheType = cacheType[file.Name],
-                    Date = file.LastWriteTime.ToString("ddMMyyyyHHmmss")
-                });
-                break;
-
-                case FileKind.Text:
-                listFile.Add(new GTextFile()
-                {
-                    Path = file.FullName,
-                    FileSize = file.Length,
-                    PreloadType = preloadType[file.Name],
-                    CacheType = cacheType[file.Name],
-                    Date = file.LastWriteTime.ToString("ddMMyyyyHHmmss")
-                });
-                break;
-
-                default: break;
-            }
-
+            count++;
+            progressValue = (count / fileInfos.Length) * 100 / 2;
+            Debug.Log(progressValue);
         }
 
         DirectoryInfo zipfolder = new DirectoryInfo(targetResource.text);
@@ -283,8 +269,10 @@ public class Manager : MonoBehaviour
         string nameMetaFile = (targetResource.text + @"\" + zipfolder.Name + "Metadata.txt").Replace("\\", "/");
         WriteZipMetadata(targetResource.text + @"\", fileZipMetaName, listDataZip, fileInfos.Length, totalSize, metadatazip, nameMetaFile, fristAsset.text);
 
-        WriteCSV(listFile, formResource.text + @"\", targetResource.text + @"\", targetResource.text + @"\", fileZipMetaName);
+        WriteCSV(listFile, formResource.text + @"\", targetResource.text + @"\", targetResource.text + @"\", fileZipMetaName, progressValue);
+
     } 
+
 
     public static void WriteTextFile(GMetaFile metaFile, string des)
     {
@@ -389,8 +377,10 @@ public class Manager : MonoBehaviour
     }
 
     public void WriteCSV(List<GFileView> fileViews, string desFrom, string desTarget,
-    string prePathFileZip, string fileZipName)
+    string prePathFileZip, string fileZipName, float plusProgress)
     {
+        int count = 0;
+
         var listLine = "v2\n";
         foreach (var fileView in fileViews)
         {
@@ -430,6 +420,9 @@ public class Manager : MonoBehaviour
 
                 listLine += (asset.ToTextCSV()) + "\n";
             }
+
+            count++;
+            progressValue = plusProgress + (count / fileInfos.Length) * 100 / 2;
         }
 
         var data = System.Text.Encoding.ASCII.GetBytes(listLine);
@@ -493,4 +486,44 @@ public class Manager : MonoBehaviour
         Application.Quit();
     }
 
+    private void Update() 
+    {
+        progressBar.value = progressValue;
+    }
+
+    private void AddListFile(FileInfo file)
+    {
+        var bytes = File.ReadAllBytes(file.FullName);
+            var texture = new Texture2D(1,1);
+            texture.LoadImage(bytes, false);
+
+            switch (CheckTypeFile(file))
+            {
+                case FileKind.Image:
+                listFile.Add(new GImageFile()
+                {
+                    Path = file.FullName,
+                    FileSize = file.Length,
+                    Heigh = texture.height,
+                    Width = texture.width,
+                    PreloadType = preloadType[file.Name],
+                    CacheType = cacheType[file.Name],
+                    Date = file.LastWriteTime.ToString("ddMMyyyyHHmmss")
+                });
+                break;
+
+                case FileKind.Text:
+                listFile.Add(new GTextFile()
+                {
+                    Path = file.FullName,
+                    FileSize = file.Length,
+                    PreloadType = preloadType[file.Name],
+                    CacheType = cacheType[file.Name],
+                    Date = file.LastWriteTime.ToString("ddMMyyyyHHmmss")
+                });
+                break;
+
+                default: break;
+            }
+    }
 }
